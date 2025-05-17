@@ -1,11 +1,12 @@
 import pdfplumber
 import re
-from ..models.data_table import TableData, ExtractResponse, ExtractPdf
-from ..models.file_request import FileResponse
+from ..schema.data_table import TableData, ExtractResponse, ExtractPdf
 from typing import List
 from num2words import num2words
 import base64
-import boto3
+from ..services import save_file_services
+from asyncpg import Connection
+
 currency_map = {
     'VND': 'đồng',
     'USD': 'đô la Mỹ',
@@ -17,8 +18,6 @@ currency_map = {
     'KRW': 'won',
 }
 
-bucket_name = 'iamtest001122-save-pdf-bucket'
-s3 = boto3.client('s3')
 def check_valid_sum(list_data : List[TableData], total_amount : str, total_by_text : str, type_of_money : str) -> str: 
     totals = 0
     for data in list_data:
@@ -34,7 +33,7 @@ def check_valid_sum(list_data : List[TableData], total_amount : str, total_by_te
         return 'Tổng số tiền bằng chữ không đúng !'
     return 'success'
 
-def read_file_pdf(fileData : str, fileName : str) -> ExtractResponse:
+async def read_file_pdf(conn : Connection, fileData : str, fileName : str) -> ExtractResponse:
     if fileData == None or fileData == '': 
         return ExtractResponse (
                 code=400, 
@@ -87,6 +86,8 @@ def read_file_pdf(fileData : str, fileName : str) -> ExtractResponse:
                     message='PDF sai định dạng',
                     data=None
                 )
+            if get_table_data == None :
+                continue
             start_index = 1 if index == 0 else 0 
             if index == 0:    
                 name_company = split_text[9]
@@ -131,17 +132,15 @@ def read_file_pdf(fileData : str, fileName : str) -> ExtractResponse:
                 data=None
             )
         extract_pdf = ExtractPdf(name_company=name_company, checked_data=data_checked, data_table=list_data, money_type=money_type, turn=turn, total_by_num=total_amount_by_num, total_by_text=total_amount_by_text)
-        try:
-            s3.upload_file(fileName, bucket_name, f"pdfs/{fileName}")
-            print("===> Upload thành công!")
-        except Exception as e:
-            print("===> Lỗi khi upload:", e)
+        status = await save_file_services.save_file(conn, fileName)
+        if not status:  
             return ExtractResponse(
                 code=400, 
                 status=True,
                 message='Fail khi upload file len S3, vui long thu lai',
                 data=None
             )
+        print("===> Upload thành công!")
         return ExtractResponse(
             code=200, 
             status=True, 
@@ -150,23 +149,3 @@ def read_file_pdf(fileData : str, fileName : str) -> ExtractResponse:
         )
 
 
-def download_file(fileName : str): 
-    object_download = f'pdfs/{fileName}'
-    try: 
-        url = s3.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': bucket_name, 'Key': object_download},
-            ExpiresIn=3600
-        )
-        return FileResponse(
-            code=200,
-            message='Download success',
-            fileName=fileName,
-            url=url,
-            expires_in=3600
-        )
-    except Exception as e: 
-        return FileResponse(
-            code=400,
-            message='File not found'
-        )
