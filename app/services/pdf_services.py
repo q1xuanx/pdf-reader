@@ -80,8 +80,13 @@ def read_file_pdf(fileData : str, fileName : str) -> ExtractResponse:
                     message='PDF sai định dạng',
                     data=None
                 )
-            if get_table_data == None: 
-                continue
+            if get_table_data == None and index == 0: 
+                return ExtractResponse(
+                    code=400,
+                    status=False,
+                    message='PDF sai định dạng',
+                    data=None
+                )
             start_index = 1 if index == 0 else 0 
             if index == 0:    
                 name_company = split_text[9]
